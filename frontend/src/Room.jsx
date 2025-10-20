@@ -4,7 +4,7 @@ import io from 'socket.io-client';
 import ReactPlayer from 'react-player';
 import Chat from './Chat';
 
-// هذا هو السطر الذي تم إصلاحه (تمت إزالة '\')
+// التأكد من إزالة الخطأ
 const API_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:4000'\;
 
 function Room() {
