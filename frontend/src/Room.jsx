@@ -1,105 +1,134 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import io from 'socket.io-client';
 import ReactPlayer from 'react-player';
 import Chat from './Chat';
 
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:4000'\;
-const socket = io(SERVER_URL);
+const API_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:4000'\;
 
 function Room() {
     const { roomID } = useParams();
-    const navigate = useNavigate();
-    const username = localStorage.getItem('username');
-    
-    const [playerState, setPlayerState] = useState({ url: "", playing: false, time: 0 });
-    const [tempVideoUrl, setTempVideoUrl] = useState("");
+    const [username, setUsername] = useState('');
+    const [socket, setSocket] = useState(null);
+    const [videoUrl, setVideoUrl] = useState('');
+    const [playing, setPlaying] = useState(false);
+    const [urlToLoad, setUrlToLoad] = useState('');
     const playerRef = useRef(null);
-    const isSyncing = useRef(false);
+    const isSeeking = useRef(false);
 
+    // 1. تهيئة الـ Socket والحصول على اسم المستخدم
     useEffect(() => {
-        if (!username) {
-            alert("يجب تحديد اسم مستخدم أولاً");
-            navigate('/');
+        const storedUsername = localStorage.getItem('username');
+        if (!storedUsername) {
+            alert('اسم المستخدم غير موجود! الرجاء العودة للصفحة الرئيسية.');
+            // يمكنك إضافة navigate('/') هنا إذا أردت
             return;
         }
+        setUsername(storedUsername);
 
-        socket.emit('JOIN_ROOM', { roomID, username });
+        const newSocket = io(API_URL);
+        setSocket(newSocket);
 
-        socket.on('SERVER_SYNC_STATE', (state) => {
-            console.log("[frosty] Received sync:", state);
-            isSyncing.current = true;
-            setPlayerState(state);
-            
-            if (playerRef.current) {
-                const timeDiff = Math.abs(playerRef.current.getCurrentTime() - state.time);
-                if (timeDiff > 1.5) {
-                    playerRef.current.seekTo(parseFloat(state.time));
-                }
-            }
-            setTimeout(() => { isSyncing.current = false; }, 200);
-        });
+        // الانضمام للغرفة
+        newSocket.emit('join-room', { roomID, username: storedUsername });
 
         return () => {
-            socket.off('SERVER_SYNC_STATE');
+            newSocket.disconnect();
         };
-    }, [roomID, username, navigate]);
+    }, [roomID]);
 
-    const sendStateToServer = (newState) => {
-        if (isSyncing.current) return;
-        socket.emit('CLIENT_SYNC_STATE', { roomID, state: newState });
+    // 2. إعداد مستمعي أحداث الـ Socket
+    useEffect(() => {
+        if (!socket) return;
+
+        // استقبال رابط الفيديو الأولي عند الانضمام
+        socket.on('sync-video-url', (url) => {
+            setVideoUrl(url);
+            setUrlToLoad(url);
+        });
+
+        // الاستماع لتغييرات حالة التشغيل
+        socket.on('playback-control', (data) => {
+            if (data.type === 'PLAY') {
+                setPlaying(true);
+            } else if (data.type === 'PAUSE') {
+                setPlaying(false);
+            }
+        });
+
+        // الاستماع لتغييرات التقديم/التأخير
+        socket.on('seek-control', (time) => {
+            if (playerRef.current) {
+                isSeeking.current = true; // لمنع إرسال الحدث مرة أخرى
+                playerRef.current.seekTo(parseFloat(time));
+                setTimeout(() => (isSeeking.current = false), 500); // إعادة الضبط
+            }
+        });
+
+        // الاستماع لرابط فيديو جديد
+        socket.on('load-video', (url) => {
+            setVideoUrl(url);
+            setUrlToLoad(url);
+        });
+
+    }, [socket]);
+
+    // --- متحكمات الفيديو ---
+
+    const handleLoadVideo = () => {
+        if (urlToLoad && socket) {
+            socket.emit('load-video', { roomID, url: urlToLoad });
+        }
     };
 
     const handlePlay = () => {
-        const newState = { ...playerState, playing: true };
-        setPlayerState(newState);
-        sendStateToServer(newState);
+        setPlaying(true);
+        socket.emit('playback-control', { roomID, type: 'PLAY' });
     };
 
     const handlePause = () => {
-        const newState = { ...playerState, playing: false, time: playerRef.current.getCurrentTime() };
-        setPlayerState(newState);
-        sendStateToServer(newState);
+        setPlaying(false);
+        socket.emit('playback-control', { roomID, type: 'PAUSE' });
     };
 
-    const handleSeek = (seconds) => {
-        const newState = { ...playerState, time: seconds };
-        setPlayerState(newState);
-        sendStateToServer(newState);
-    };
-
-    const handleChangeVideo = () => {
-        if (!tempVideoUrl) return;
-        socket.emit('CLIENT_CHANGE_VIDEO', { roomID, videoUrl: tempVideoUrl, username });
-        setTempVideoUrl("");
+    const handleSeek = (time) => {
+        if (!isSeeking.current && socket) {
+            socket.emit('seek-control', { roomID, time: time });
+        }
     };
 
     return (
         <div className="room-container">
-            <h2>Room: {roomID} (مرحباً, {username})</h2>
-            <div className="room-layout">
-                <div className="video-container">
-                    <div className="url-input">
-                        <input 
-                            type="text" 
-                            placeholder="أدخل رابط فيديو (YouTube, .mp4, ...)"
-                            value={tempVideoUrl}
-                            onChange={(e) => setTempVideoUrl(e.target.value)}
+            <h2>
+                الغرفة: {roomID} (أهلاً، {username})
+            </h2>
+            <div className="main-content">
+                <div className="video-player-container">
+                    <div className="video-controls">
+                        <input
+                            type="text"
+                            value={urlToLoad}
+                            onChange={(e) => setUrlToLoad(e.target.value)}
+                            placeholder="أدخل رابط فيديو (YouTube, etc.)"
                         />
-                        <button onClick={handleChangeVideo}>تغيير</button>
+                        <button onClick={handleLoadVideo}>تحميل</button>
                     </div>
-                    <div className="video-wrapper">
+                    <div className="player-wrapper">
                         <ReactPlayer
                             ref={playerRef}
-                            className="react-player"
-                            url={playerState.url}
-                            playing={playerState.playing}
+                            url={videoUrl}
+                            playing={playing}
                             controls={true}
                             width="100%"
                             height="100%"
                             onPlay={handlePlay}
                             onPause={handlePause}
                             onSeek={handleSeek}
+                            config={{
+                                youtube: {
+                                    playerVars: { showinfo: 1 }
+                                }
+                            }}
                         />
                     </div>
                 </div>
@@ -110,4 +139,5 @@ function Room() {
         </div>
     );
 }
+
 export default Room;
