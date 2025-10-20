@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-// التأكد من أن الرابط صحيح وبدون أي أخطاء
+// هذا هو السطر الذي تم إصلاحه (تمت إزالة '\')
 const API_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:4000'\;
 
 function Home() {

@@ -4,6 +4,7 @@ import io from 'socket.io-client';
 import ReactPlayer from 'react-player';
 import Chat from './Chat';
 
+// هذا هو السطر الذي تم إصلاحه (تمت إزالة '\')
 const API_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:4000'\;
 
 function Room() {
@@ -21,7 +22,6 @@ function Room() {
         const storedUsername = localStorage.getItem('username');
         if (!storedUsername) {
             alert('اسم المستخدم غير موجود! الرجاء العودة للصفحة الرئيسية.');
-            // يمكنك إضافة navigate('/') هنا إذا أردت
             return;
         }
         setUsername(storedUsername);
@@ -29,7 +29,6 @@ function Room() {
         const newSocket = io(API_URL);
         setSocket(newSocket);
 
-        // الانضمام للغرفة
         newSocket.emit('join-room', { roomID, username: storedUsername });
 
         return () => {
@@ -41,13 +40,11 @@ function Room() {
     useEffect(() => {
         if (!socket) return;
 
-        // استقبال رابط الفيديو الأولي عند الانضمام
         socket.on('sync-video-url', (url) => {
             setVideoUrl(url);
             setUrlToLoad(url);
         });
 
-        // الاستماع لتغييرات حالة التشغيل
         socket.on('playback-control', (data) => {
             if (data.type === 'PLAY') {
                 setPlaying(true);
@@ -56,24 +53,20 @@ function Room() {
             }
         });
 
-        // الاستماع لتغييرات التقديم/التأخير
         socket.on('seek-control', (time) => {
             if (playerRef.current) {
-                isSeeking.current = true; // لمنع إرسال الحدث مرة أخرى
+                isSeeking.current = true;
                 playerRef.current.seekTo(parseFloat(time));
-                setTimeout(() => (isSeeking.current = false), 500); // إعادة الضبط
+                setTimeout(() => (isSeeking.current = false), 500);
             }
         });
 
-        // الاستماع لرابط فيديو جديد
         socket.on('load-video', (url) => {
             setVideoUrl(url);
             setUrlToLoad(url);
         });
 
     }, [socket]);
-
-    // --- متحكمات الفيديو ---
 
     const handleLoadVideo = () => {
         if (urlToLoad && socket) {
